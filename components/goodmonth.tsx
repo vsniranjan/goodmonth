@@ -71,7 +71,7 @@ import {
   runBilling,
   visibleWorkspace,
 } from "@/lib/engine";
-import { day, id, initials, money } from "@/lib/format";
+import { day, id, initials, istMonth, money } from "@/lib/format";
 import type {
   Command,
   Customer,
@@ -1788,6 +1788,12 @@ export default function Goodmonth() {
                       <span>
                         {e.subject}
                         <small>{e.to}</small>
+                        {e.text && (
+                          <details className="dev-email">
+                            <summary>Read development email</summary>
+                            <pre>{e.text}</pre>
+                          </details>
+                        )}
                       </span>
                       <Badge>{e.status}</Badge>
                     </div>
@@ -3262,14 +3268,16 @@ function Pagination({
   );
 }
 function RevenueChart({ w }: { w: Workspace }) {
-  const date = new Date(w.clock);
+  const date = new Date(new Date(w.clock).getTime() + 19800000);
   const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(date.getFullYear(), date.getMonth() - 5 + i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const d = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 5 + i, 1),
+    );
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     return {
-      label: d.toLocaleDateString("en", { month: "short" }),
+      label: d.toLocaleDateString("en", { month: "short", timeZone: "UTC" }),
       value: w.payments
-        .filter((p) => p.date.startsWith(key))
+        .filter((p) => istMonth(p.date) === key)
         .reduce((n, p) => n + p.amount, 0),
     };
   });

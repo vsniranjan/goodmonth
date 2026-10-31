@@ -3867,3 +3867,48 @@ td {
   line-height: 1.7;
   margin-top: 20px;
 }
+.mini-loyalty-card {
+  top: 6px;
+  padding: 14px 18px 10px;
+}
+.mini-loyalty-card h3 {
+  font-size: 19px;
+  line-height: 1.1;
+  margin: 12px 0;
+}
+.mini-loyalty-card footer {
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.sidebar {
+  overflow-y: auto;
+}
+@media (max-height: 800px) and (min-width: 761px) {
+  .sidebar-loyalty {
+    display: none;
+  }
+}
+@media (max-width: 570px) {
+  .mini-loyalty-card {
+    top: 0;
+  }
+}
+.dev-email {
+  margin-top: 10px;
+  font-size: 10px;
+  color: #758765;
+}
+.dev-email summary {
+  cursor: pointer;
+}
+.dev-email pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.8;
+  padding: 12px;
+  background: #f4f5ea;
+  border-radius: 5px;
+  margin-top: 8px;
+}

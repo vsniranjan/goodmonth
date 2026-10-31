@@ -5,6 +5,7 @@ import {
   confirmInvoice,
   createInvoice,
   loyalty,
+  metrics,
   nextPeriod,
   reconcile,
   runBilling,
@@ -358,5 +359,27 @@ describe("draft invoice changes", () => {
     w = pay(w, i.id, i.total, "full");
     expect(w.payments).toHaveLength(1);
     expect(w.invoices[0].paid).toBe(i.total);
+  });
+});
+
+describe("report timezone", () => {
+  it("groups collections by the Indian calendar month", () => {
+    const w = fixture();
+    w.clock = "2026-10-31T19:00:00Z";
+    w.payments = [
+      {
+        id: "tz",
+        invoiceId: "i",
+        customerId: "c",
+        amount: 100,
+        method: "UPI",
+        date: "2026-10-31T18:31:00Z",
+        note: "",
+        requestKey: "tz",
+      },
+    ];
+    expect(metrics(w).collected).toBe(100);
+    w.clock = "2026-10-31T17:00:00Z";
+    expect(metrics(w).collected).toBe(0);
   });
 });

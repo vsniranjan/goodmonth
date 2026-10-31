@@ -247,7 +247,7 @@ export function seedWorkspace(): Workspace {
       endDate: "2026-12-31",
       limit: 50,
       used: 8,
-      productId: "prod_studio",
+      productId: "prod_insights",
       subscriptionId: "",
     },
   ];

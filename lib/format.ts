@@ -33,3 +33,6 @@ export function istDate(value: string) {
     throw new Error("Choose a valid date.");
   return new Date(s).toISOString();
 }
+
+export const istMonth = (value: string) =>
+  new Date(new Date(value).getTime() + 19800000).toISOString().slice(0, 7);

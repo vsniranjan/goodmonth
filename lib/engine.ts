@@ -1,4 +1,4 @@
-import { id, istDate } from "./format";
+import { id, istDate, istMonth } from "./format";
 import type {
   Command,
   Invoice,
@@ -628,19 +628,20 @@ export function metrics(w: Workspace) {
   );
   const mrr = active.reduce((n, s) => {
     const p = w.plans.find((x) => x.id === s.planId)!;
-    const price = calculate(w, s).subtotal * (1 - loyalty(w, s) / 100);
+    const calc = calculate(w, s);
+    const price = calc.subtotal - calc.discount;
     return (
       n +
       price *
         { daily: 30, weekly: 52 / 12, monthly: 1, yearly: 1 / 12 }[p.interval]
     );
   }, 0);
-  const month = w.clock.slice(0, 7);
+  const month = istMonth(w.clock);
   return {
     active: active.length,
     mrr: Math.round(mrr),
     collected: w.payments
-      .filter((p) => p.date.startsWith(month))
+      .filter((p) => istMonth(p.date) === month)
       .reduce((n, p) => n + p.amount, 0),
     outstanding: w.invoices
       .filter((i) => i.status !== "Cancelled")
