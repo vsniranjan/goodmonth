@@ -1,4 +1,45 @@
-import { apiError, requireUser } from '@/lib/auth';
-import { db } from '@/lib/db';
-export const runtime='nodejs';
-export async function GET(){try{const u=await requireUser();if(u.role!=='admin')throw new Error('Only an admin can view operations.');const [users,jobs,outbox]=await Promise.all([db().user.findMany({where:{workspaceId:u.workspaceId},select:{id:true,name:true,email:true,role:true}}),db().jobRun.findMany({where:{workspaceId:u.workspaceId},take:10,orderBy:{startedAt:'desc'}}),db().emailOutbox.findMany({where:{to:{in:(await db().user.findMany({where:{workspaceId:u.workspaceId},select:{email:true}})).map(u=>u.email)}},take:10,orderBy:{createdAt:'desc'},select:{id:true,to:true,subject:true,status:true,text:process.env.NODE_ENV!=='production'}})]);return Response.json({users,jobs,outbox});}catch(e){return apiError(e);}}
+import { apiError, requireUser } from "@/lib/auth";
+import { db } from "@/lib/db";
+export const runtime = "nodejs";
+export async function GET() {
+  try {
+    const u = await requireUser();
+    if (u.role !== "admin")
+      throw new Error("Only an admin can view operations.");
+    const [users, jobs, outbox] = await Promise.all([
+      db().user.findMany({
+        where: { workspaceId: u.workspaceId },
+        select: { id: true, name: true, email: true, role: true },
+      }),
+      db().jobRun.findMany({
+        where: { workspaceId: u.workspaceId },
+        take: 10,
+        orderBy: { startedAt: "desc" },
+      }),
+      db().emailOutbox.findMany({
+        where: {
+          to: {
+            in: (
+              await db().user.findMany({
+                where: { workspaceId: u.workspaceId },
+                select: { email: true },
+              })
+            ).map((u) => u.email),
+          },
+        },
+        take: 10,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          to: true,
+          subject: true,
+          status: true,
+          text: process.env.NODE_ENV !== "production",
+        },
+      }),
+    ]);
+    return Response.json({ users, jobs, outbox });
+  } catch (e) {
+    return apiError(e);
+  }
+}

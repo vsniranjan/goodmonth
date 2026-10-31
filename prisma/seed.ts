@@ -1,5 +1,69 @@
-import { hash } from 'bcryptjs';
-import { PrismaClient, Prisma } from '@prisma/client';
-import { seedWorkspace } from '../lib/seed';
-async function main(){const prisma=new PrismaClient();const email=process.env.SEED_ADMIN_EMAIL?.toLowerCase(),password=process.env.SEED_ADMIN_PASSWORD;if(!email||!password||password.length<12)throw new Error('Set SEED_ADMIN_EMAIL and a SEED_ADMIN_PASSWORD of at least 12 characters.');if(await prisma.user.findUnique({where:{email}})){console.log('Admin already exists; seed left unchanged.');return;}const w=seedWorkspace();w.demo=false;w.clock=new Date().toISOString();const data=JSON.parse(JSON.stringify(w)) as Prisma.InputJsonValue;
- await prisma.$transaction(async tx=>{const workspace=await tx.workspace.create({data:{name:'Brightloop Software',state:data}});await tx.user.create({data:{name:'Brightloop Admin',email,passwordHash:await hash(password,12),role:'admin',workspaceId:workspace.id}});for(const i of w.invoices)await tx.invoiceLedger.create({data:{id:i.id,workspaceId:workspace.id,subscriptionId:i.subscriptionId,period:i.period,customerId:i.customerId,status:i.status,dueAt:new Date(i.dueDate),total:i.total,data:JSON.parse(JSON.stringify(i))}});for(const p of w.payments)await tx.paymentLedger.create({data:{id:p.id,workspaceId:workspace.id,invoiceId:p.invoiceId,requestKey:p.requestKey,amount:p.amount,paidAt:new Date(p.date),data:JSON.parse(JSON.stringify(p))}});},{timeout:30000});console.log('Brightloop workspace and admin created.');await prisma.$disconnect();}main().catch(e=>{console.error(e.message);process.exit(1);});
+import { hash } from "bcryptjs";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { seedWorkspace } from "../lib/seed";
+async function main() {
+  const prisma = new PrismaClient();
+  const email = process.env.SEED_ADMIN_EMAIL?.toLowerCase(),
+    password = process.env.SEED_ADMIN_PASSWORD;
+  if (!email || !password || password.length < 12)
+    throw new Error(
+      "Set SEED_ADMIN_EMAIL and a SEED_ADMIN_PASSWORD of at least 12 characters.",
+    );
+  if (await prisma.user.findUnique({ where: { email } })) {
+    console.log("Admin already exists; seed left unchanged.");
+    return;
+  }
+  const w = seedWorkspace();
+  w.demo = false;
+  w.clock = new Date().toISOString();
+  const data = JSON.parse(JSON.stringify(w)) as Prisma.InputJsonValue;
+  await prisma.$transaction(
+    async (tx) => {
+      const workspace = await tx.workspace.create({
+        data: { name: "Brightloop Software", state: data },
+      });
+      await tx.user.create({
+        data: {
+          name: "Brightloop Admin",
+          email,
+          passwordHash: await hash(password, 12),
+          role: "admin",
+          workspaceId: workspace.id,
+        },
+      });
+      for (const i of w.invoices)
+        await tx.invoiceLedger.create({
+          data: {
+            id: i.id,
+            workspaceId: workspace.id,
+            subscriptionId: i.subscriptionId,
+            period: i.period,
+            customerId: i.customerId,
+            status: i.status,
+            dueAt: new Date(i.dueDate),
+            total: i.total,
+            data: JSON.parse(JSON.stringify(i)),
+          },
+        });
+      for (const p of w.payments)
+        await tx.paymentLedger.create({
+          data: {
+            id: p.id,
+            workspaceId: workspace.id,
+            invoiceId: p.invoiceId,
+            requestKey: p.requestKey,
+            amount: p.amount,
+            paidAt: new Date(p.date),
+            data: JSON.parse(JSON.stringify(p)),
+          },
+        });
+    },
+    { timeout: 30000 },
+  );
+  console.log("Brightloop workspace and admin created.");
+  await prisma.$disconnect();
+}
+main().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});

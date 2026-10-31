@@ -1,19 +1,191 @@
-import { compare, hash } from 'bcryptjs';
-import { cookies } from 'next/headers';
-import { z } from 'zod';
-import { apiError, checkOrigin, currentUser, hashToken, newSession, passwordValid, token } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { emptyWorkspace } from '@/lib/seed';
-import { mutateWorkspace } from '@/lib/store';
-import { queueEmail, deliverEmails } from '@/lib/email';
-export const runtime='nodejs';
-export async function GET(_:Request,{params}:{params:Promise<{action:string}>}){try{if((await params).action!=='me')return Response.json({error:'Not found'},{status:404});return Response.json({user:await currentUser(),configured:Boolean(process.env.DATABASE_URL)});}catch(e){return apiError(e);}}
-export async function POST(req:Request,{params}:{params:Promise<{action:string}>}){try{checkOrigin(req);const {action}=await params;const body=await req.json();
- if(action==='logout'){const t=(await cookies()).get('gm_session')?.value;if(t&&process.env.DATABASE_URL)await db().session.deleteMany({where:{tokenHash:hashToken(t)}});(await cookies()).delete('gm_session');return Response.json({ok:true});}
- if(action==='login'){const email=z.string().email().parse(body.email).toLowerCase().trim(),password=z.string().max(128).parse(body.password);const user=await db().user.findUnique({where:{email}});if(!user||!await compare(password,user.passwordHash))throw new Error('That email and password do not match.');await newSession(user.id);return Response.json({ok:true});}
- if(action==='register'){const email=z.string().email().parse(body.email).toLowerCase().trim(),name=z.string().min(2).max(100).parse(body.name),password=z.string().parse(body.password);if(!passwordValid(password))throw new Error('Use more than 8 characters, an uppercase letter, a lowercase letter and a special character.');if(await db().user.findUnique({where:{email}}))throw new Error('An account already uses this email.');const workspace=await db().workspace.findFirst({where:{name:'Brightloop Software'},orderBy:{createdAt:'asc'}});if(!workspace)throw new Error('Your business workspace has not been set up yet. Please contact the admin.');const customerId=`cust_${token().slice(0,16)}`;const passwordHash=await hash(password,12);const user=await db().user.create({data:{email,name,passwordHash,role:'customer',customerId,workspaceId:workspace.id}});try{await mutateWorkspace(workspace.id,w=>{w.customers.push({id:customerId,name,email,company:String(body.company||name).slice(0,100),color:'#d7dfcf'});return w;});}catch(e){await db().user.delete({where:{id:user.id}});throw e;}await newSession(user.id);return Response.json({ok:true});}
- if(action==='forgot'){const email=z.string().email().parse(body.email).toLowerCase().trim(),user=await db().user.findUnique({where:{email}});if(user){const t=token();await db().passwordReset.create({data:{tokenHash:hashToken(t),userId:user.id,expiresAt:new Date(Date.now()+30*60000)}});const base=process.env.APP_URL;if(!base)throw new Error('Email delivery has not been configured.');await queueEmail(`reset_${hashToken(t)}`,email,'A fresh start for your Goodmonth password',`Reset your password within 30 minutes: ${base}/?reset=${t}`);await deliverEmails(5);}return Response.json({ok:true,message:'If that account exists, a reset link is on its way.'});}
- if(action==='reset'){const t=z.string().min(32).parse(body.token),password=z.string().parse(body.password);if(!passwordValid(password))throw new Error('Use more than 8 characters, upper and lowercase letters, and a special character.');const reset=await db().passwordReset.findUnique({where:{tokenHash:hashToken(t)}});if(!reset||reset.expiresAt<new Date())throw new Error('That reset link has expired. Request a fresh one.');const passwordHash=await hash(password,12);await db().$transaction(async tx=>{const consumed=await tx.passwordReset.deleteMany({where:{tokenHash:reset.tokenHash,expiresAt:{gt:new Date()}}});if(!consumed.count)throw new Error('This reset link has already been used.');await tx.user.update({where:{id:reset.userId},data:{passwordHash}});await tx.session.deleteMany({where:{userId:reset.userId}});await tx.passwordReset.deleteMany({where:{userId:reset.userId}});});return Response.json({ok:true});}
- if(action==='staff'){const viewer=await currentUser();if(viewer?.role!=='admin')throw new Error('Only an admin can add staff.');const email=z.string().email().parse(body.email).toLowerCase().trim(),name=z.string().min(2).max(100).parse(body.name),password=z.string().parse(body.password);if(!passwordValid(password))throw new Error('Use a stronger password with upper and lowercase letters and a special character.');await db().user.create({data:{name,email,passwordHash:await hash(password,12),role:'staff',workspaceId:viewer.workspaceId!}});return Response.json({ok:true});}
- return Response.json({error:'Not found'},{status:404});
- }catch(e){if(e instanceof z.ZodError)return Response.json({error:'Check the form fields and try again.'},{status:400});return apiError(e);}}
+import { compare, hash } from "bcryptjs";
+import { cookies } from "next/headers";
+import { z } from "zod";
+import {
+  apiError,
+  checkOrigin,
+  currentUser,
+  hashToken,
+  newSession,
+  passwordValid,
+  token,
+} from "@/lib/auth";
+import { db } from "@/lib/db";
+import { emptyWorkspace } from "@/lib/seed";
+import { mutateWorkspace } from "@/lib/store";
+import { queueEmail, deliverEmails } from "@/lib/email";
+export const runtime = "nodejs";
+export async function GET(
+  _: Request,
+  { params }: { params: Promise<{ action: string }> },
+) {
+  try {
+    if ((await params).action !== "me")
+      return Response.json({ error: "Not found" }, { status: 404 });
+    return Response.json({
+      user: await currentUser(),
+      configured: Boolean(process.env.DATABASE_URL),
+    });
+  } catch (e) {
+    return apiError(e);
+  }
+}
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ action: string }> },
+) {
+  try {
+    checkOrigin(req);
+    const { action } = await params;
+    const body = await req.json();
+    if (action === "logout") {
+      const t = (await cookies()).get("gm_session")?.value;
+      if (t && process.env.DATABASE_URL)
+        await db().session.deleteMany({ where: { tokenHash: hashToken(t) } });
+      (await cookies()).delete("gm_session");
+      return Response.json({ ok: true });
+    }
+    if (action === "login") {
+      const email = z.string().email().parse(body.email).toLowerCase().trim(),
+        password = z.string().max(128).parse(body.password);
+      const user = await db().user.findUnique({ where: { email } });
+      if (!user || !(await compare(password, user.passwordHash)))
+        throw new Error("That email and password do not match.");
+      await newSession(user.id);
+      return Response.json({ ok: true });
+    }
+    if (action === "register") {
+      const email = z.string().email().parse(body.email).toLowerCase().trim(),
+        name = z.string().min(2).max(100).parse(body.name),
+        password = z.string().parse(body.password);
+      if (!passwordValid(password))
+        throw new Error(
+          "Use more than 8 characters, an uppercase letter, a lowercase letter and a special character.",
+        );
+      if (await db().user.findUnique({ where: { email } }))
+        throw new Error("An account already uses this email.");
+      const workspace = await db().workspace.findFirst({
+        where: { name: "Brightloop Software" },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!workspace)
+        throw new Error(
+          "Your business workspace has not been set up yet. Please contact the admin.",
+        );
+      const customerId = `cust_${token().slice(0, 16)}`;
+      const passwordHash = await hash(password, 12);
+      const user = await db().user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          role: "customer",
+          customerId,
+          workspaceId: workspace.id,
+        },
+      });
+      try {
+        await mutateWorkspace(workspace.id, (w) => {
+          w.customers.push({
+            id: customerId,
+            name,
+            email,
+            company: String(body.company || name).slice(0, 100),
+            color: "#d7dfcf",
+          });
+          return w;
+        });
+      } catch (e) {
+        await db().user.delete({ where: { id: user.id } });
+        throw e;
+      }
+      await newSession(user.id);
+      return Response.json({ ok: true });
+    }
+    if (action === "forgot") {
+      const email = z.string().email().parse(body.email).toLowerCase().trim(),
+        user = await db().user.findUnique({ where: { email } });
+      if (user) {
+        const t = token();
+        await db().passwordReset.create({
+          data: {
+            tokenHash: hashToken(t),
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 30 * 60000),
+          },
+        });
+        const base = process.env.APP_URL;
+        if (!base) throw new Error("Email delivery has not been configured.");
+        await queueEmail(
+          `reset_${hashToken(t)}`,
+          email,
+          "A fresh start for your Goodmonth password",
+          `Reset your password within 30 minutes: ${base}/?reset=${t}`,
+        );
+        await deliverEmails(5);
+      }
+      return Response.json({
+        ok: true,
+        message: "If that account exists, a reset link is on its way.",
+      });
+    }
+    if (action === "reset") {
+      const t = z.string().min(32).parse(body.token),
+        password = z.string().parse(body.password);
+      if (!passwordValid(password))
+        throw new Error(
+          "Use more than 8 characters, upper and lowercase letters, and a special character.",
+        );
+      const reset = await db().passwordReset.findUnique({
+        where: { tokenHash: hashToken(t) },
+      });
+      if (!reset || reset.expiresAt < new Date())
+        throw new Error("That reset link has expired. Request a fresh one.");
+      const passwordHash = await hash(password, 12);
+      await db().$transaction(async (tx) => {
+        const consumed = await tx.passwordReset.deleteMany({
+          where: { tokenHash: reset.tokenHash, expiresAt: { gt: new Date() } },
+        });
+        if (!consumed.count)
+          throw new Error("This reset link has already been used.");
+        await tx.user.update({
+          where: { id: reset.userId },
+          data: { passwordHash },
+        });
+        await tx.session.deleteMany({ where: { userId: reset.userId } });
+        await tx.passwordReset.deleteMany({ where: { userId: reset.userId } });
+      });
+      return Response.json({ ok: true });
+    }
+    if (action === "staff") {
+      const viewer = await currentUser();
+      if (viewer?.role !== "admin")
+        throw new Error("Only an admin can add staff.");
+      const email = z.string().email().parse(body.email).toLowerCase().trim(),
+        name = z.string().min(2).max(100).parse(body.name),
+        password = z.string().parse(body.password);
+      if (!passwordValid(password))
+        throw new Error(
+          "Use a stronger password with upper and lowercase letters and a special character.",
+        );
+      await db().user.create({
+        data: {
+          name,
+          email,
+          passwordHash: await hash(password, 12),
+          role: "staff",
+          workspaceId: viewer.workspaceId!,
+        },
+      });
+      return Response.json({ ok: true });
+    }
+    return Response.json({ error: "Not found" }, { status: 404 });
+  } catch (e) {
+    if (e instanceof z.ZodError)
+      return Response.json(
+        { error: "Check the form fields and try again." },
+        { status: 400 },
+      );
+    return apiError(e);
+  }
+}
