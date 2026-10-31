@@ -12,7 +12,7 @@ npm run db:generate
 npm run dev
 ```
 
-Open http://localhost:3000. Without database credentials, the app opens an explicitly labeled **sample workspace**. This is an interactive, browser-local demonstration: edits and payments persist in localStorage, and its clock can advance without changing real accounts. No sample action collects money. Use **Demo studio** to switch sample roles, advance time, run billing twice, or reset the story.
+Open http://localhost:3000 for the product homepage. Browse `/plans`, use `/login` or `/signup` for customer accounts, and `/admin/login` for the team. Without database credentials, plans are explicitly labeled samples and account forms explain that live sign-in is unavailable. Open `/demo` for the **sample workspace**. This is an interactive, browser-local demonstration: edits and payments persist in localStorage, and its clock can advance without changing real accounts. No sample action collects money. Use **Demo studio** to switch sample roles, advance time, run billing twice, or reset the story.
 
 ## Run live accounts with a database
 
@@ -38,7 +38,7 @@ npm run db:seed
 
 Set `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` (at least 12 characters) first. There are no built-in live login credentials. The seed creates the admin and an initial sample business dataset; subsequent changes are dynamic database writes. Live mode uses the real current date, so initial historical invoices may be overdue.
 
-4. Restart the app. A configured database opens the sign-in screen first. Admins add staff in Settings; public registration creates a customer account in Brightloop. Customer permissions are enforced on the server.
+4. Restart the app. The homepage stays public with a configured database. Protected workspace routes require sign-in. Admins add staff in Settings; public registration creates a customer account in Brightloop. Customer permissions are enforced on the server. Customers choose plans in `/portal/plans` and submit a request. Admins review requests in `/admin/requests`; approval creates a draft subscription for the existing quotation, invoice, and activation process. Approval is idempotent. Older workspace documents default to an empty request list, so this addition needs no database migration. The public `/api/catalog` exposes available plans and variants without internal product costs or customer data.
 
 Prisma CLI reads `.env`. Next.js also reads `.env.local`; use `.env` for values needed by both.
 

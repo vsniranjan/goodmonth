@@ -27,7 +27,7 @@ export async function POST(req: Request) {
         `invoice_${inv.id}`,
         customer.email,
         `${inv.number} · your Goodmonth invoice`,
-        `Hi ${customer.name},\n\nYour invoice ${inv.number} is ready.\n${inv.product} × ${inv.quantity}\nTotal: ${money(inv.total)}\nOutstanding: ${money(inv.total - inv.paid)}\n\nView it at ${process.env.APP_URL}\n\nThanks for another good month.`,
+        `Hi ${customer.name},\n\nYour invoice ${inv.number} is ready.\n${inv.product} × ${inv.quantity}\nTotal: ${money(inv.total)}\nOutstanding: ${money(inv.total - inv.paid)}\n\nView it at ${process.env.APP_URL}/portal/invoices\n\nThanks for another good month.`,
       );
       const delivery = await deliverEmails();
       return Response.json({

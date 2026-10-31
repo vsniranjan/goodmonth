@@ -233,10 +233,18 @@ export function applyCommand(
     "saveDiscount",
     "saveTaxes",
     "saveTemplate",
+    "approveRequest",
+    "declineRequest",
   ];
   if (admin.includes(cmd.type) && viewer.role !== "admin")
     throw new Error("Only an admin can change this setting.");
-  const customerAllowed = ["transition", "pause", "resume", "renew"];
+  const customerAllowed = [
+    "transition",
+    "pause",
+    "resume",
+    "renew",
+    "requestSubscription",
+  ];
   if (viewer.role === "customer" && !customerAllowed.includes(cmd.type))
     throw new Error("You do not have access to this action.");
   const sub = () => {
@@ -247,6 +255,92 @@ export function applyCommand(
     return s;
   };
   switch (cmd.type) {
+    case "requestSubscription": {
+      if (
+        viewer.role !== "customer" ||
+        !viewer.customerId ||
+        !w.customers.some((c) => c.id === viewer.customerId)
+      )
+        throw new Error("Only customers can request a subscription.");
+      const plan = w.plans.find((x) => x.id === p.planId);
+      if (!plan || !planAvailable(plan, w.clock))
+        throw new Error(
+          "This plan is no longer available. Please choose another.",
+        );
+      const product = w.products.find((x) => x.id === plan.productId);
+      const variant = str(p.variant);
+      if (!product?.variants.some((x) => x.name === variant))
+        throw new Error("Choose an available product variant.");
+      const quantity = num(p.quantity, plan.minQuantity, 100000);
+      if (!Number.isInteger(quantity))
+        throw new Error("Quantity must be a whole number.");
+      w.requests ??= [];
+      if (
+        w.requests.some(
+          (x) =>
+            x.customerId === viewer.customerId &&
+            x.planId === plan.id &&
+            x.status === "Pending",
+        )
+      )
+        throw new Error("You already have a pending request for this plan.");
+      w.requests.push({
+        id: id("req"),
+        customerId: viewer.customerId,
+        planId: plan.id,
+        variant,
+        quantity,
+        createdAt: w.clock,
+        status: "Pending",
+      });
+      event(
+        w,
+        "New plan request",
+        `${plan.name} · awaiting approval`,
+        "subscription",
+      );
+      break;
+    }
+    case "approveRequest": {
+      const request = w.requests?.find((x) => x.id === p.id);
+      if (!request) throw new Error("Request not found.");
+      if (request.status === "Approved") return w;
+      if (request.status !== "Pending")
+        throw new Error("This request has already been reviewed.");
+      const plan = w.plans.find((x) => x.id === request.planId);
+      if (!plan || !planAvailable(plan, w.clock))
+        throw new Error(
+          "This plan is no longer available. Decline this request and ask the customer to choose another.",
+        );
+      const next = applyCommand(
+        w,
+        {
+          type: "createSubscription",
+          payload: {
+            customerId: request.customerId,
+            planId: request.planId,
+            variant: request.variant,
+            quantity: request.quantity,
+            startDate: w.clock,
+            notes: `Customer request ${request.id}`,
+          },
+        },
+        viewer,
+      );
+      const approved = next.requests!.find((x) => x.id === request.id)!;
+      approved.status = "Approved";
+      approved.subscriptionId =
+        next.subscriptions[next.subscriptions.length - 1].id;
+      return next;
+    }
+    case "declineRequest": {
+      const request = w.requests?.find((x) => x.id === p.id);
+      if (!request) throw new Error("Request not found.");
+      if (request.status !== "Pending")
+        throw new Error("This request has already been reviewed.");
+      request.status = "Declined";
+      break;
+    }
     case "saveProduct": {
       const product = {
         id: typeof p.id === "string" ? p.id : id("prod"),
@@ -598,17 +692,30 @@ export function applyCommand(
   }
   return w;
 }
+export function planAvailable(p: Plan, clock: string) {
+  const now = new Date(clock).getTime();
+  return (
+    now >= new Date(istDate(p.startDate)).getTime() &&
+    (!p.endDate || now < new Date(istDate(p.endDate)).getTime() + DAY)
+  );
+}
 export function visibleWorkspace(w: Workspace, v: Viewer): Workspace {
   if (v.role !== "customer") return w;
   const subscriptions = w.subscriptions.filter(
     (x) => x.customerId === v.customerId,
   );
-  const ids = new Set(subscriptions.map((x) => x.planId));
+  const ids = new Set([
+    ...subscriptions.map((x) => x.planId),
+    ...(w.requests || [])
+      .filter((x) => x.customerId === v.customerId)
+      .map((x) => x.planId),
+  ]);
   return {
     ...w,
     previews: Object.fromEntries(
       subscriptions.map((s) => [s.id, calculate(w, s)]),
     ),
+    requests: (w.requests || []).filter((x) => x.customerId === v.customerId),
     customers: w.customers.filter((x) => x.id === v.customerId),
     subscriptions,
     invoices: w.invoices.filter((x) => x.customerId === v.customerId),

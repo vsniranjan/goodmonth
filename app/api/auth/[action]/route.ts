@@ -45,14 +45,22 @@ export async function POST(
       (await cookies()).delete("gm_session");
       return Response.json({ ok: true });
     }
+    if (!process.env.DATABASE_URL)
+      throw new Error(
+        "Accounts are not available yet. Please try again later, or explore the sample workspace.",
+      );
     if (action === "login") {
       const email = z.string().email().parse(body.email).toLowerCase().trim(),
         password = z.string().max(128).parse(body.password);
       const user = await db().user.findUnique({ where: { email } });
       if (!user || !(await compare(password, user.passwordHash)))
         throw new Error("That email and password do not match.");
+      if (body.area === "admin" && user.role === "customer")
+        throw new Error(
+          "This sign-in is for staff and admins. Please use customer sign-in.",
+        );
       await newSession(user.id);
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, role: user.role });
     }
     if (action === "register") {
       const email = z.string().email().parse(body.email).toLowerCase().trim(),
@@ -120,7 +128,7 @@ export async function POST(
           `reset_${hashToken(t)}`,
           email,
           "A fresh start for your Goodmonth password",
-          `Reset your password within 30 minutes: ${base}/?reset=${t}`,
+          `Reset your password within 30 minutes: ${base}/reset-password?token=${t}`,
         );
         await deliverEmails(5);
       }

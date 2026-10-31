@@ -119,7 +119,39 @@ export type Activity = {
   date: string;
   kind: "payment" | "loyalty" | "subscription" | "invoice" | "reset";
 };
+export type SubscriptionRequest = {
+  id: string;
+  customerId: string;
+  planId: string;
+  quantity: number;
+  variant: string;
+  createdAt: string;
+  status: "Pending" | "Approved" | "Declined";
+  subscriptionId?: string;
+};
+export type CatalogPlan = Pick<
+  Plan,
+  | "id"
+  | "name"
+  | "price"
+  | "interval"
+  | "minQuantity"
+  | "canPause"
+  | "canClose"
+  | "loyalty"
+  | "step"
+  | "cap"
+> & {
+  productName: string;
+  variants: { name: string; extra: number }[];
+};
+export type Catalog = {
+  plans: CatalogPlan[];
+  sample: boolean;
+  unavailable?: boolean;
+};
 export type Workspace = {
+  requests?: SubscriptionRequest[];
   products: Product[];
   plans: Plan[];
   customers: Customer[];

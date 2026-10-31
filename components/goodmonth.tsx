@@ -1,10 +1,17 @@
 "use client";
+import Link from "next/link";
+import PlanBrowser from "./plan-browser";
+import { Overview, Requests, CustomerHome } from "./workspace-sections";
+import { catalogFromWorkspace } from "@/lib/catalog-data";
+import { useRouter, usePathname } from "next/navigation";
+import { workspaceTabs, type WorkspaceTab } from "@/lib/navigation";
 import {
   useEffect,
   useState,
   useRef,
   type ReactNode,
   type FormEvent,
+  Fragment,
 } from "react";
 import {
   ArrowUpRight,
@@ -82,20 +89,12 @@ import type {
   Workspace,
 } from "@/lib/types";
 
-type Tab =
-  | "Overview"
-  | "Subscriptions"
-  | "Customers"
-  | "Invoices"
-  | "Payments"
-  | "Products & plans"
-  | "Loyalty club"
-  | "Settings"
-  | "My subscription";
+type Tab = WorkspaceTab;
 type Dialog = { kind: string; data?: string };
 const nav = [
   { name: "Overview", icon: LayoutDashboard },
   { name: "Subscriptions", icon: Repeat2 },
+  { name: "Requests", icon: Clock3 },
   { name: "Customers", icon: Users },
   { name: "Invoices", icon: FileText },
   { name: "Payments", icon: Wallet },
@@ -110,9 +109,19 @@ const demoViewer: Viewer = {
 };
 const titles: Record<Tab, { eyebrow: string; title: string; sub: string }> = {
   Overview: {
-    eyebrow: "A LITTLE CLARITY, EVERY DAY",
-    title: "Good things are adding up.",
-    sub: "Here’s how your subscriptions are doing. Looking good, by the way.",
+    eyebrow: "YOUR BUSINESS, AT A GLANCE",
+    title: "A little clarity for your day.",
+    sub: "Your subscriptions, recent activity, and what needs attention.",
+  },
+  Requests: {
+    eyebrow: "THE NEXT GOOD MONTH",
+    title: "Plan requests.",
+    sub: "Follow each request from a new beginning to an approved subscription.",
+  },
+  Plans: {
+    eyebrow: "FIND YOUR GOOD FIT",
+    title: "Room for your next chapter.",
+    sub: "Explore the available plans and send your choice for review.",
   },
   Subscriptions: {
     eyebrow: "BUILT FOR THE LONG RUN",
@@ -249,11 +258,19 @@ function Toggle({
   );
 }
 
-export default function Goodmonth() {
+export default function Goodmonth({
+  demo = false,
+  initialTab = "Overview",
+}: {
+  demo?: boolean;
+  initialTab?: WorkspaceTab;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [w, setW] = useState<Workspace | null>(null),
     [viewer, setViewer] = useState<Viewer>(demoViewer),
     [live, setLive] = useState(false),
-    [tab, setTab] = useState<Tab>("Overview"),
+    [tab, setTab] = useState<Tab>(initialTab),
     [dialog, setDialog] = useState<Dialog | null>(null),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState(false),
@@ -264,7 +281,6 @@ export default function Goodmonth() {
     [narrow, setNarrow] = useState(false),
     [demoTools, setDemoTools] = useState(false),
     [globalSearch, setGlobalSearch] = useState(""),
-    [setup, setSetup] = useState(false),
     [bootError, setBootError] = useState(""),
     [planChoice, setPlanChoice] = useState(""),
     [notifications, setNotifications] = useState(false),
@@ -289,8 +305,38 @@ export default function Goodmonth() {
   }, []);
   useEffect(() => {
     async function boot() {
-      const reset = new URLSearchParams(location.search).get("reset");
-      if (reset) setDialog({ kind: "reset", data: reset });
+      if (demo && demoEnabled) {
+        try {
+          const stored = localStorage.getItem("goodmonth-demo-v1");
+          const sample = stored ? JSON.parse(stored) : seedWorkspace();
+          reconcile(sample);
+          setW(sample);
+          const role =
+            initialTab === "Plans"
+              ? "customer"
+              : sessionStorage.getItem("goodmonth-demo-role") || "admin";
+          sessionStorage.setItem("goodmonth-demo-role", role);
+          if (role === "customer") {
+            setViewer({
+              id: "demo_customer",
+              name: "Maya Shah",
+              email: "maya@example.com",
+              role: "customer",
+              customerId: "cust_maya",
+            });
+            if (initialTab === "Overview") setTab("My subscription");
+          } else
+            setViewer({
+              ...demoViewer,
+              role: role === "staff" ? "staff" : "admin",
+            });
+        } catch {
+          const sample = seedWorkspace();
+          reconcile(sample);
+          setW(sample);
+        }
+        return;
+      }
       try {
         const res = await fetch("/api/auth/me");
         const data = await res.json();
@@ -303,41 +349,36 @@ export default function Goodmonth() {
           setW(d.workspace);
           setViewer(d.viewer);
           setLive(true);
-          if (d.viewer.role === "customer") setTab("My subscription");
+
           return;
         }
-        if (data.configured) {
-          setSetup(true);
-          return;
-        }
-      } catch (e) {
-        setSetup(true);
-        setBootError(
-          e instanceof Error
-            ? e.message
-            : "Could not connect. Please try again.",
+        router.replace(
+          pathname.startsWith("/admin") ? "/admin/login" : "/login",
         );
-        return;
+      } catch (e) {
+        setBootError(
+          e instanceof Error ? e.message : "Could not load your workspace.",
+        );
       }
-      if (demoEnabled) {
-        try {
-          const stored = localStorage.getItem("goodmonth-demo-v1");
-          const seed = stored ? JSON.parse(stored) : seedWorkspace();
-          reconcile(seed);
-          setW(seed);
-        } catch {
-          const sample = seedWorkspace();
-          reconcile(sample);
-          setW(sample);
-        }
-      } else setSetup(true);
     }
     boot();
-  }, [demoEnabled]);
+  }, [demo, demoEnabled, router]);
   useEffect(() => {
-    if (w && !live)
-      localStorage.setItem("goodmonth-demo-v1", JSON.stringify(w));
-  }, [w, live]);
+    setTab(
+      demo && viewer.role === "customer" && initialTab === "Overview"
+        ? "My subscription"
+        : initialTab,
+    );
+  }, [initialTab, pathname, demo, viewer.role]);
+  useEffect(() => {
+    if (w && demo) {
+      try {
+        localStorage.setItem("goodmonth-demo-v1", JSON.stringify(w));
+      } catch {
+        /* A private browser may not allow storage. */
+      }
+    }
+  }, [w, demo]);
   useEffect(() => {
     setPlanChoice("");
   }, [dialog?.kind, dialog?.data]);
@@ -378,7 +419,7 @@ export default function Goodmonth() {
     message = "All saved. Looking good.",
     close = true,
   ) {
-    if (!w) return;
+    if (!w || busy) return false;
     setBusy(true);
     try {
       const cmd: Command = { type, payload, requestKey: id("request") };
@@ -389,6 +430,12 @@ export default function Goodmonth() {
           body: JSON.stringify(cmd),
         });
         const data = await res.json();
+        if (res.status === 401) {
+          router.replace(
+            pathname.startsWith("/admin") ? "/admin/login" : "/login",
+          );
+          return false;
+        }
         if (!res.ok) throw new Error(data.error);
         setW(data.workspace);
         if (data.message) message = data.message;
@@ -402,8 +449,10 @@ export default function Goodmonth() {
       }
       if (close) setDialog(null);
       announce(message);
+      return true;
     } catch (e) {
       announce(e instanceof Error ? e.message : "Something went wrong.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -418,17 +467,19 @@ export default function Goodmonth() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
-      if (["login", "register"].includes(action)) location.href = "/";
+      if (["login", "register"].includes(action)) location.href = "/login";
       else if (action === "reset") {
         history.replaceState({}, "", "/");
-        setDialog({ kind: "login" });
+        location.href = "/login";
         announce("Password updated. Welcome back.");
       } else {
         setDialog(null);
         announce(d.message || "All saved.");
       }
+      return true;
     } catch (e) {
       announce(e instanceof Error ? e.message : "Try again in a moment.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -436,6 +487,12 @@ export default function Goodmonth() {
   function go(t: Tab) {
     setMobile(false);
     setTab(t);
+    const root = demo
+      ? "/demo"
+      : viewer.role === "customer"
+        ? "/portal"
+        : "/admin";
+    router.push(`${root}${workspaceTabs[t] ? `/${workspaceTabs[t]}` : ""}`);
     setGlobalSearch("");
   }
   function advance(days: number) {
@@ -453,93 +510,21 @@ export default function Goodmonth() {
   const current = w ? visibleWorkspace(w, viewer) : null;
   if (!w)
     return (
-      <main className={setup ? "welcome-page" : "boot"}>
+      <main className="boot">
         <Logo />
-        {setup ? (
+        {bootError ? (
           <>
-            <section className="welcome-content">
-              <div className="welcome-story">
-                <p className="eyebrow">STAYING PAYS. QUITE LITERALLY.</p>
-                <h1>
-                  Good months.
-                  <br />
-                  <em>Better together.</em>
-                </h1>
-                <p>
-                  Your subscriptions, a little simpler.
-                  <br />
-                  Your loyalty, a little more rewarding.
-                </p>
-                <Sun size={110} />
-                <div className="welcome-prices">
-                  <span>
-                    Month one<strong>₹1,000</strong>
-                  </span>
-                  <ArrowRight size={22} />
-                  <span>
-                    Month five<strong>₹800</strong>
-                  </span>
-                </div>
-                <small>
-                  Example before tax · 5% per on-time renewal · capped at 20%
-                </small>
-              </div>
-              <div className="welcome-form panel">
-                <p className="eyebrow">YOUR NEXT CHAPTER</p>
-                <h2>
-                  {dialog?.kind === "register"
-                    ? "Make yourself at home."
-                    : dialog?.kind === "forgot"
-                      ? "A fresh start."
-                      : dialog?.kind === "reset"
-                        ? "A new little secret."
-                        : "Welcome back."}
-                </h2>
-                {bootError && (
-                  <p role="alert" className="login-error">
-                    {bootError}
-                  </p>
-                )}
-                <AuthForm
-                  kind={dialog?.kind || "login"}
-                  token={dialog?.data}
-                  busy={busy}
-                  onSubmit={auth}
-                  onChange={(kind) => setDialog({ kind })}
-                />
-                {demoEnabled && (
-                  <button
-                    className="welcome-demo"
-                    onClick={() => {
-                      const sample = seedWorkspace();
-                      reconcile(sample);
-                      setW(sample);
-                      setSetup(false);
-                      setDialog(null);
-                    }}
-                  >
-                    Just looking? Explore the sample workspace{" "}
-                    <ArrowUpRight size={14} />
-                  </button>
-                )}
-              </div>
-            </section>
-            <footer>Made for good months. And the people behind them.</footer>
+            <p role="alert">{bootError}</p>
+            <button className="btn" onClick={() => location.reload()}>
+              Try again
+            </button>
+            <a href="/login">Back to sign in</a>
           </>
         ) : (
           <>
             <Sun size={70} />
-            <p>Putting the kettle on…</p>
+            <p>Opening your workspace…</p>
           </>
-        )}
-        {toast && (
-          <div role="alert" className="toast">
-            <AlertCircle size={18} />
-            <span>{toast}</span>
-            <button aria-label="Dismiss message" onClick={() => setToast("")}>
-              <X size={15} />
-            </button>
-          </div>
         )}
       </main>
     );
@@ -594,7 +579,9 @@ export default function Goodmonth() {
         ].slice(0, 6)
       : [];
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell focused-workspace ${isCustomer ? "customer-workspace" : "admin-workspace"}`}
+    >
       {mobile && (
         <div className="sidebar-overlay" onClick={() => setMobile(false)} />
       )}
@@ -602,59 +589,96 @@ export default function Goodmonth() {
         className={`sidebar ${mobile ? "open" : ""}`}
         inert={narrow && !mobile}
       >
+        <button
+          className="sidebar-dismiss icon-btn"
+          aria-label="Close menu"
+          onClick={() => setMobile(false)}
+        >
+          <X size={20} />
+        </button>
         <a className="brand" href="/" aria-label="Goodmonth home">
           <Logo />
         </a>
-        <button
-          className="workspace-picker"
-          onClick={() => setDialog({ kind: "workspace" })}
-        >
-          <span className="workspace-monogram">b.</span>
+        <div className="workspace-identity">
           <span>
-            <strong>Brightloop</strong>
-            <small>YOUR WORKSPACE</small>
+            {isCustomer ? "YOUR CUSTOMER PORTAL" : "BRIGHTLOOP SOFTWARE"}
           </span>
-          <ChevronDown size={15} />
-        </button>
-        <p className="nav-caption">THE DAY-TO-DAY</p>
+          <strong>
+            {isCustomer
+              ? `Hello, ${viewer.name.split(" ")[0]}.`
+              : "Your workspace"}
+          </strong>
+        </div>
+        <p className="nav-caption">
+          {isCustomer ? "YOUR GOODMONTH" : "WORKSPACE"}
+        </p>
         <nav aria-label="Main navigation">
           {(isCustomer
             ? [
                 { name: "My subscription", icon: Heart },
+                { name: "Plans", icon: Package },
+                { name: "Requests", icon: Clock3 },
                 { name: "Invoices", icon: FileText },
               ]
             : nav
           ).map((item) => (
-            <button
-              key={item.name}
-              className={`nav-item ${tab === item.name ? "selected" : ""}`}
-              onClick={() => go(item.name as Tab)}
-            >
-              <item.icon size={19} strokeWidth={1.6} />
-              <span>{item.name}</span>
-              {item.name === "Invoices" && overdue.length > 0 && (
-                <span className="nav-count">{overdue.length}</span>
-              )}
-              {tab === item.name && <span className="nav-active-dot" />}
-            </button>
+            <Fragment key={item.name}>
+              {!isCustomer &&
+                ["Customers", "Products & plans"].includes(item.name) && (
+                  <p className="nav-caption nav-group-caption">
+                    {item.name === "Customers"
+                      ? "CUSTOMERS & BILLING"
+                      : "PRODUCT & RETENTION"}
+                  </p>
+                )}
+              <Link
+                href={`${demo ? "/demo" : isCustomer ? "/portal" : "/admin"}${workspaceTabs[item.name as Tab] ? `/${workspaceTabs[item.name as Tab]}` : ""}`}
+                aria-current={tab === item.name ? "page" : undefined}
+                key={item.name}
+                className={`nav-item ${tab === item.name ? "selected" : ""}`}
+                onClick={() => setMobile(false)}
+              >
+                <item.icon size={19} strokeWidth={1.6} />
+                <span>{item.name}</span>
+                {item.name === "Invoices" && overdue.length > 0 && (
+                  <span className="nav-count">{overdue.length}</span>
+                )}
+                {tab === item.name && <span className="nav-active-dot" />}
+              </Link>
+            </Fragment>
           ))}
         </nav>
-        {!isCustomer && (
-          <div className="sidebar-loyalty">
-            <Sun size={42} />
-            <span className="tiny-label">A LITTLE THANK-YOU</span>
-            <h3>
-              Good months.
-              <br />
-              Better together.
-            </h3>
-            <p>Turn everyday renewals into a reason to stay.</p>
-            <button onClick={() => go("Loyalty club")}>
-              Meet your loyalty club <ArrowUpRight size={15} />
-            </button>
-          </div>
-        )}
         <div className="sidebar-bottom">
+          <button
+            className="nav-item"
+            onClick={async () => {
+              if (demo) {
+                location.href = "/";
+                return;
+              }
+              setBusy(true);
+              try {
+                const res = await fetch("/api/auth/logout", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: "{}",
+                });
+                if (!res.ok)
+                  throw new Error("Could not sign out. Please try again.");
+                location.href = "/";
+              } catch (e) {
+                announce(
+                  e instanceof Error ? e.message : "Could not sign out.",
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+          >
+            <LogOut size={18} />
+            {demo ? "Back to website" : "Sign out"}
+          </button>
           <button
             className={`nav-item ${tab === "Settings" ? "selected" : ""}`}
             onClick={() =>
@@ -694,7 +718,13 @@ export default function Goodmonth() {
             >
               <Menu size={20} />
             </button>
-            <span>Workspace</span>
+            <span>
+              {demo
+                ? "Sample workspace"
+                : isCustomer
+                  ? "Customer portal"
+                  : "Admin workspace"}
+            </span>
             <ChevronRight size={13} />
             <strong>{tab}</strong>
           </div>
@@ -829,204 +859,34 @@ export default function Goodmonth() {
               ) : null}
             </div>
           </div>
-          {tab === "Overview" && (
-            <>
-              <section className="hero-banner">
-                <div className="hero-copy">
-                  <span className="banner-label">
-                    <span />
-                    STAYING PAYS. QUITE LITERALLY.
-                  </span>
-                  <h2>
-                    Good for your customers.
-                    <br />
-                    <em>Even better for your business.</em>
-                  </h2>
-                  <p>
-                    Every on-time renewal earns a little more off.
-                    <br className="desktop-only" /> A reason to stay. A
-                    relationship that grows.
-                  </p>
-                  <button
-                    className="banner-link"
-                    onClick={() => go("Loyalty club")}
-                  >
-                    Take a look at your loyalty club <ArrowRight size={17} />
-                  </button>
-                </div>
-                <div className="banner-art">
-                  <div className="art-dashed-loop" />
-                  <Sun size={73} className="hero-sun" />
-                  <div className="mini-loyalty-card">
-                    <div>
-                      <span>THE GOODMONTH CLUB</span>
-                      <Heart size={15} />
-                    </div>
-                    <h3>
-                      A little loyalty.
-                      <br />A lovely little perk.
-                    </h3>
-                    <Stamps streak={4} small />
-                    <footer>
-                      <span>YOUR NEXT MONTH</span>
-                      <strong>
-                        20% <small>off</small>
-                      </strong>
-                    </footer>
-                  </div>
-                  <span className="handwritten">
-                    little things add up{" "}
-                    <svg width="67" height="24" viewBox="0 0 67 24">
-                      <path
-                        d="M2 5q36 30 60 0m-12 0 13-2-4 12"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                      />
-                    </svg>
-                  </span>
-                </div>
-              </section>
-              <section className="metrics-grid" aria-label="Business metrics">
-                <Metric
-                  label="Monthly recurring revenue"
-                  value={money(m.mrr, true)}
-                  note="Your steady monthly rhythm"
-                  icon={<Repeat2 size={17} />}
-                  accent
-                />
-                <Metric
-                  label="Active subscriptions"
-                  value={String(m.active).padStart(2, "0")}
-                  note={`${c.customers.length} businesses growing with you`}
-                  icon={<Users size={17} />}
-                />
-                <Metric
-                  label="Collected this month"
-                  value={money(m.collected, true)}
-                  note="Money in. A good feeling."
-                  icon={<ArrowDownLeft size={17} />}
-                />
-                <Metric
-                  label="Outstanding balance"
-                  value={money(m.outstanding, true)}
-                  note={`${m.overdue} invoices need a little nudge`}
-                  icon={<Clock3 size={17} />}
-                  warning
-                />
-              </section>
-              <div className="overview-middle">
-                <section className="panel revenue-panel">
-                  <SectionHead
-                    title="A good kind of growth"
-                    sub="Payments collected, month by month"
-                    action={
-                      <span className="chart-legend">
-                        <i />
-                        Collected revenue
-                      </span>
-                    }
-                  />
-                  <RevenueChart w={c} />
-                  <div className="chart-foot">
-                    <span>
-                      <span className="soft-dot" />
-                      Every renewal is a little vote of confidence.
-                    </span>
-                    <TextLink onClick={() => go("Payments")}>
-                      See payments
-                    </TextLink>
-                  </div>
-                </section>
-                <section className="panel loyalty-panel">
-                  <div className="loyalty-top">
-                    <span className="mini-tag">THE LOYALTY EFFECT</span>
-                    <Heart size={19} />
-                  </div>
-                  <h3>
-                    A little less.
-                    <br />
-                    <em>A lot more loyalty.</em>
-                  </h3>
-                  <div className="loyalty-stat">
-                    {money(m.savings, true)}
-                    <span>given back in customer savings</span>
-                  </div>
-                  <div className="loyalty-divider" />
-                  <div className="loyalty-people">
-                    <div className="avatar-stack">
-                      {c.customers.slice(0, 3).map((x) => (
-                        <Avatar key={x.id} customer={x} small />
-                      ))}
-                    </div>
-                    <p>
-                      <strong>
-                        {c.subscriptions.filter((s) => s.streak >= 2).length}{" "}
-                        loyal subscribers
-                      </strong>
-                      <br />
-                      and counting. Here’s to them.
-                    </p>
-                  </div>
-                  <button onClick={() => go("Loyalty club")}>
-                    A closer look <ArrowUpRight size={17} />
-                  </button>
-                </section>
-              </div>
-              <section className="panel subscriptions-panel">
-                <SectionHead
-                  title="Familiar faces, fresh renewals"
-                  sub="A few of the good people growing with you"
-                  action={
-                    <TextLink onClick={() => go("Subscriptions")}>
-                      All subscriptions
-                    </TextLink>
-                  }
-                />
-                {subscriptionTable(c.subscriptions.slice(0, 4))}
-              </section>
-              <div className="overview-bottom">
-                <section className="panel activity-panel">
-                  <SectionHead
-                    title="Around here lately"
-                    action={
-                      <span className="small-label">THE LITTLE UPDATES</span>
-                    }
-                  />
-                  {c.activities.slice(0, 3).map((a, i) => (
-                    <div className="activity-row" key={a.id}>
-                      <span className={`activity-icon kind-${a.kind}`}>
-                        {a.kind === "payment" ? (
-                          <ArrowDownLeft size={16} />
-                        ) : a.kind === "reset" ? (
-                          <Clock3 size={16} />
-                        ) : (
-                          <Heart size={16} />
-                        )}
-                      </span>
-                      <div>
-                        <strong>{a.title}</strong>
-                        <p>{a.detail}</p>
-                      </div>
-                      <small>
-                        {day(a.date, { day: "numeric", month: "short" })}
-                      </small>
-                    </div>
-                  ))}
-                </section>
-                <section className="note-card">
-                  <span className="tiny-label">A NOTE FROM GOODMONTH</span>
-                  <h3>
-                    Behind every renewal
-                    <br />
-                    is a reason to stay.
-                  </h3>
-                  <p>Make yours a good one.</p>
-                  <span className="note-scribble">That’s the whole idea.</span>
-                  <Sun size={55} />
-                </section>
-              </div>
-            </>
+          {tab === "Overview" && <Overview w={c} onNavigate={go} />}
+          {tab === "Plans" && (
+            <PlanBrowser
+              initial={demo ? catalogFromWorkspace(w) : undefined}
+              customer
+              demo={demo}
+              onRequest={async (values) => {
+                const ok = await command(
+                  "requestSubscription",
+                  values,
+                  "Your request is with the team. We’ll prepare the next steps.",
+                );
+                if (ok) go("Requests");
+                return ok;
+              }}
+            />
+          )}
+          {tab === "Requests" && (
+            <Requests
+              w={c}
+              viewer={viewer}
+              busy={busy}
+              onCommand={command}
+              onBrowse={() => go("Plans")}
+              onOpen={(id) =>
+                setDialog({ kind: "subscriptionDetail", data: id })
+              }
+            />
           )}
           {tab === "Subscriptions" && (
             <section className="panel">
@@ -1611,10 +1471,12 @@ export default function Goodmonth() {
             </>
           )}
           {tab === "My subscription" && (
-            <CustomerPortal
+            <CustomerHome
               w={c}
               onAction={(kind, data) => setDialog({ kind, data })}
-              onCommand={command}
+              onBrowse={() => go("Plans")}
+              onRequests={() => go("Requests")}
+              onInvoices={() => go("Invoices")}
             />
           )}
           {tab === "Settings" && (
@@ -1866,6 +1728,7 @@ export default function Goodmonth() {
               value={viewer.role}
               onChange={(e) => {
                 const role = e.target.value as Viewer["role"];
+                sessionStorage.setItem("goodmonth-demo-role", role);
                 setViewer(
                   role === "customer"
                     ? {
@@ -1897,7 +1760,7 @@ export default function Goodmonth() {
           <button
             className="plain-link"
             onClick={() => {
-              setDialog({ kind: "login" });
+              location.href = "/login";
               setDemoTools(false);
             }}
           >
@@ -2019,34 +1882,6 @@ export default function Goodmonth() {
   function renderDialog() {
     if (!dialog) return null;
     const close = () => setDialog(null);
-    if (["login", "register", "forgot", "reset"].includes(dialog.kind))
-      return (
-        <Modal
-          title={
-            dialog.kind === "register"
-              ? "Make yourself at home."
-              : dialog.kind === "forgot"
-                ? "A fresh start."
-                : dialog.kind === "reset"
-                  ? "A new little secret."
-                  : "Welcome back."
-          }
-          description={
-            !live
-              ? "Live accounts need a connected database. The sample workspace is always open."
-              : undefined
-          }
-          onClose={close}
-        >
-          <AuthForm
-            kind={dialog.kind}
-            token={dialog.data}
-            busy={busy}
-            onSubmit={auth}
-            onChange={(kind) => setDialog({ kind })}
-          />
-        </Modal>
-      );
     if (dialog.kind === "resetDemo")
       return (
         <Modal
@@ -2064,7 +1899,8 @@ export default function Goodmonth() {
                 reconcile(sample);
                 setW(sample);
                 setViewer(demoViewer);
-                setTab("Overview");
+                sessionStorage.setItem("goodmonth-demo-role", "admin");
+                go("Overview");
                 close();
                 announce("A fresh page. Here we go again.");
               }}
@@ -2540,7 +2376,9 @@ export default function Goodmonth() {
               <Button
                 variant="secondary"
                 onClick={() =>
-                  auth("logout", {}).then(() => (location.href = "/"))
+                  auth("logout", {}).then((ok) => {
+                    if (ok) location.href = "/";
+                  })
                 }
               >
                 <LogOut size={16} />
@@ -3265,288 +3103,5 @@ function Pagination({
         </button>
       </div>
     </div>
-  );
-}
-function RevenueChart({ w }: { w: Workspace }) {
-  const date = new Date(new Date(w.clock).getTime() + 19800000);
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 5 + i, 1),
-    );
-    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-    return {
-      label: d.toLocaleDateString("en", { month: "short", timeZone: "UTC" }),
-      value: w.payments
-        .filter((p) => istMonth(p.date) === key)
-        .reduce((n, p) => n + p.amount, 0),
-    };
-  });
-  const max = Math.max(...months.map((x) => x.value), 10000),
-    width = 600,
-    height = 150;
-  const points = months
-    .map(
-      (m, i) =>
-        `${i * (width / 5)},${height - (m.value / max) * (height - 20)}`,
-    )
-    .join(" ");
-  return (
-    <div className="revenue-chart">
-      <div className="chart-y">
-        {[1, 0.75, 0.5, 0.25, 0].map((f) => (
-          <span key={f}>{money(Math.round(max * f), true)}</span>
-        ))}
-      </div>
-      <div className="chart-plot">
-        <div className="chart-grid">
-          {[0, 1, 2, 3, 4].map((n) => (
-            <span key={n} />
-          ))}
-        </div>
-        <svg
-          viewBox={`-8 -12 ${width + 16} ${height + 25}`}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label="Monthly collected revenue"
-        >
-          <defs>
-            <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c5d3b4" stopOpacity=".65" />
-              <stop offset="100%" stopColor="#eaf0e3" stopOpacity=".05" />
-            </linearGradient>
-          </defs>
-          <polygon
-            points={`0,${height} ${points} ${width},${height}`}
-            fill="url(#chart-fill)"
-          />
-          <polyline
-            points={points}
-            fill="none"
-            stroke="#496a45"
-            strokeWidth="2.5"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-          {months.map((m, i) => (
-            <circle
-              key={i}
-              cx={i * (width / 5)}
-              cy={height - (m.value / max) * (height - 20)}
-              r="4"
-              fill="#fff"
-              stroke="#496a45"
-              strokeWidth="2"
-            >
-              <title>
-                {m.label}: {money(m.value)}
-              </title>
-            </circle>
-          ))}
-        </svg>
-        <div className="chart-x">
-          {months.map((m, i) => (
-            <span key={i}>{m.label}</span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-function CustomerPortal({
-  w,
-  onAction,
-  onCommand,
-}: {
-  w: Workspace;
-  onAction: (kind: string, id?: string) => void;
-  onCommand: (
-    type: string,
-    payload: Record<string, unknown>,
-    message?: string,
-  ) => void;
-}) {
-  const s = w.subscriptions[0],
-    p = w.plans.find((p) => p.id === s?.planId);
-  if (!s || !p)
-    return (
-      <section className="panel">
-        <Empty
-          title="Your first good month is on its way."
-          text="Your team will prepare your subscription. Once it’s ready, you’ll find everything here."
-        />
-      </section>
-    );
-  const calc = { ...calculate(w, s), ...w.previews?.[s.id] },
-    discount = loyalty(w, s);
-  return (
-    <>
-      <section className="portal-hero">
-        <div>
-          <span className="tiny-label">YOUR NEXT MONTH, A LITTLE LIGHTER</span>
-          <div className="portal-price">
-            {money(calc.total)}
-            <span>including tax</span>
-          </div>
-          <h2>{p.name}</h2>
-          <p>
-            Next renewal: <strong>{day(s.nextBilling)}</strong>
-            <br />
-            Payment due:{" "}
-            <strong>
-              {day(paymentDeadline(s.nextBilling, s.terms))}, 11:59 PM IST
-            </strong>
-          </p>
-          <Badge tone="green">{s.paused ? "Paused" : s.stage}</Badge>
-          <div className="portal-actions">
-            <Button
-              variant="secondary"
-              onClick={() => onAction("subscriptionDetail", s.id)}
-            >
-              Your plan details <ArrowUpRight size={16} />
-            </Button>
-          </div>
-        </div>
-        <div className="portal-loyalty">
-          <div>
-            <span className="tiny-label">THE GOODMONTH CLUB</span>
-            <Sun size={52} />
-          </div>
-          <h3>
-            {discount > 0
-              ? "Look at you, staying golden."
-              : "The start of something good."}
-          </h3>
-          <Stamps streak={s.streak} />
-          <p>
-            <strong>{discount}% off your recurring price.</strong>
-            <br />
-            {discount >= s.loyaltyCap
-              ? "You’ve unlocked your biggest little perk."
-              : `Your next on-time renewal unlocks ${Math.min(discount + s.loyaltyStep, s.loyaltyCap)}% off.`}
-          </p>
-        </div>
-      </section>
-      <div className="fair-note">
-        <ShieldCheck size={22} />
-        <div>
-          <strong>Your rewards, clearly explained.</strong>
-          <p>
-            Pay by your renewal deadline to keep your streak. Missing it resets
-            future pricing to the original rate. Invoices already issued keep
-            their agreed amount.
-          </p>
-        </div>
-      </div>
-      <section className="panel">
-        <SectionHead
-          title="Your little paper trail"
-          sub="Every invoice, all in one place"
-        />
-        {w.invoices
-          .slice()
-          .reverse()
-          .map((i) => (
-            <button
-              className="portal-invoice"
-              key={i.id}
-              onClick={() => onAction("invoice", i.id)}
-            >
-              <span className="activity-icon">
-                <FileText size={18} />
-              </span>
-              <span>
-                <strong>{i.number}</strong>
-                <small>{day(i.dueDate)}</small>
-              </span>
-              <strong>{money(i.total)}</strong>
-              <Badge tone={statusTone(invStatus(i, w))}>
-                {invStatus(i, w)}
-              </Badge>
-              <ArrowUpRight size={17} />
-            </button>
-          ))}
-      </section>
-    </>
-  );
-}
-function AuthForm({
-  kind,
-  token,
-  busy,
-  onSubmit,
-  onChange,
-}: {
-  kind: string;
-  token?: string;
-  busy: boolean;
-  onSubmit: (action: string, values: Record<string, unknown>) => void;
-  onChange: (kind: string) => void;
-}) {
-  return (
-    <form
-      className="editor-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit(kind, {
-          ...Object.fromEntries(new FormData(e.currentTarget)),
-          token,
-        });
-      }}
-    >
-      {kind === "register" && (
-        <>
-          <Field label="Your name">
-            <FormInput name="name" />
-          </Field>
-          <Field label="Business name">
-            <FormInput name="company" />
-          </Field>
-        </>
-      )}
-      {kind !== "reset" && (
-        <Field label="Email address">
-          <FormInput name="email" type="email" />
-        </Field>
-      )}
-      {kind !== "forgot" && (
-        <Field
-          label={kind === "reset" ? "New password" : "Password"}
-          hint={
-            kind === "register" || kind === "reset"
-              ? "More than 8 characters, upper and lowercase, and a special character."
-              : undefined
-          }
-        >
-          <FormInput name="password" type="password" />
-        </Field>
-      )}
-      <Button type="submit" disabled={busy} className="full">
-        {busy ? <Loader2 size={16} className="spin" /> : null}
-        {kind === "login"
-          ? "Make yourself at home"
-          : kind === "register"
-            ? "Start your next chapter"
-            : kind === "forgot"
-              ? "Send a fresh link"
-              : "Save new password"}
-        <ArrowRight size={16} />
-      </Button>
-      <div className="auth-links">
-        {kind === "login" ? (
-          <>
-            <button type="button" onClick={() => onChange("forgot")}>
-              Forgot your password?
-            </button>
-            <button type="button" onClick={() => onChange("register")}>
-              New here? Create an account.
-            </button>
-          </>
-        ) : (
-          <button type="button" onClick={() => onChange("login")}>
-            Back to sign in
-          </button>
-        )}
-      </div>
-    </form>
   );
 }
