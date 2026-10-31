@@ -7,6 +7,6 @@ neonConfig.webSocketConstructor=ws;
 const globalDb=globalThis as unknown as {goodmonthDb?:PrismaClient};
 export function db(){
  if(!process.env.DATABASE_URL)throw new Error('Connect a Neon database to use live accounts. The sample workspace is ready to explore.');
- if(!globalDb.goodmonthDb)globalDb.goodmonthDb=new PrismaClient({adapter:new PrismaNeon({connectionString:process.env.DATABASE_URL})});
+ if(!globalDb.goodmonthDb){const local=['localhost','127.0.0.1','postgres'].includes(new URL(process.env.DATABASE_URL).hostname);globalDb.goodmonthDb=local?new PrismaClient():new PrismaClient({adapter:new PrismaNeon({connectionString:process.env.DATABASE_URL})});}
  return globalDb.goodmonthDb;
 }

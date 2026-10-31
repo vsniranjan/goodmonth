@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { applyCommand, calculate, confirmInvoice, createInvoice, loyalty, nextPeriod, reconcile, runBilling, visibleWorkspace } from '../lib/engine';
+import { money } from '../lib/format';
 import { seedWorkspace } from '../lib/seed';
 import type { Workspace, Viewer } from '../lib/types';
 const admin:Viewer={id:'admin',name:'Admin',email:'admin@example.com',role:'admin'};
-function fixture(){const w=seedWorkspace();w.invoices=[];w.payments=[];w.discounts=[];w.activities=[];w.subscriptions=[{...w.subscriptions[0],streak:0,missed:false,nextBilling:'2026-11-01T18:30:00.000Z',stage:'Active'}];w.clock='2026-11-01T06:30:00.000Z';return w;}
+function fixture(){const w=seedWorkspace();w.invoices=[];w.payments=[];w.discounts=[];w.activities=[];w.subscriptions=[{...w.subscriptions[0],streak:0,missed:false,nextBilling:'2026-11-01T18:30:00.000Z',terms:0,stage:'Active'}];w.clock='2026-11-01T06:30:00.000Z';return w;}
 function invoice(w:Workspace){const i=createInvoice(w,w.subscriptions[0]);confirmInvoice(w,i);return i;}
 function pay(w:Workspace,invoiceId:string,amount:number,key='one'){return applyCommand(w,{type:'recordPayment',payload:{invoiceId,amount,method:'UPI'},requestKey:key},admin);}
 describe('loyalty and money',()=>{
@@ -33,3 +34,5 @@ describe('permissions',()=>{
  it('blocks actions on another customer subscription',()=>{expect(()=>applyCommand(fixture(),{type:'pause',payload:{id:'sub_1'}},{...customer,customerId:'other'})).toThrow(/access/);});
  it('filters all financial records to the signed-in customer',()=>{const w=seedWorkspace(),view=visibleWorkspace(w,customer);expect(view.subscriptions.every(s=>s.customerId===customer.customerId)).toBe(true);expect(view.invoices.every(s=>s.customerId===customer.customerId)).toBe(true);expect(view.payments.every(s=>s.customerId===customer.customerId)).toBe(true);expect(view.products.every(p=>p.cost===0)).toBe(true);expect(view.discounts).toHaveLength(0);expect(view.activities).toHaveLength(0);});
 });
+
+describe('display formatting',()=>{it('formats fractional values in compact metrics without throwing',()=>{expect(money(141552,true)).toContain('1,416');expect(money(141552)).toContain('1,415.52');});});
