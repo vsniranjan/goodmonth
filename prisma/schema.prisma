@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model Workspace {
+  id String @id @default(cuid())
+  name String
+  state Json
+  version Int @default(0)
+  users User[]
+  invoices InvoiceLedger[]
+  payments PaymentLedger[]
+  jobs JobRun[]
+  createdAt DateTime @default(now())
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role String @default("customer")
+  customerId String?
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  sessions Session[]
+  resets PasswordReset[]
+  createdAt DateTime @default(now())
+  @@index([workspaceId, role])
+}
+model Session {
+  tokenHash String @id
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+model PasswordReset {
+  tokenHash String @id
+  userId String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  expiresAt DateTime
+}
+model InvoiceLedger {
+  id String @id
+  workspaceId String
+  workspace Workspace @relation(fields:[workspaceId], references:[id])
+  subscriptionId String
+  period String
+  customerId String
+  status String
+  dueAt DateTime
+  total Int
+  data Json
+  @@unique([workspaceId, subscriptionId, period])
+  @@index([workspaceId, dueAt, status])
+  @@index([workspaceId, customerId])
+}
+model PaymentLedger {
+  id String @id
+  workspaceId String
+  workspace Workspace @relation(fields:[workspaceId], references:[id])
+  invoiceId String
+  requestKey String
+  amount Int
+  paidAt DateTime
+  data Json
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, invoiceId])
+}
+model EmailOutbox {
+  id String @id @default(cuid())
+  key String @unique
+  to String
+  subject String
+  text String
+  status String @default("pending")
+  attempts Int @default(0)
+  leaseUntil DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  @@index([status, leaseUntil])
+}
+model JobRun {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields:[workspaceId], references:[id])
+  status String
+  processed Int @default(0)
+  backlog Int @default(0)
+  error String?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+}
