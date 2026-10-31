@@ -1,0 +1,16 @@
+export type Role = 'admin' | 'staff' | 'customer';
+export type Stage = 'Draft' | 'Quotation' | 'Confirmed' | 'Active' | 'Closed';
+export type Interval = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type Product = { id:string; name:string; type:string; price:number; cost:number; notes:string; variants:{name:string; extra:number}[] };
+export type Plan = { id:string; name:string; productId:string; price:number; interval:Interval; minQuantity:number; startDate:string; endDate:string; autoClose:boolean; canPause:boolean; canClose:boolean; canRenew:boolean; loyalty:boolean; step:number; cap:number };
+export type Customer = { id:string; name:string; email:string; company:string; color:string };
+export type Subscription = { id:string; number:string; customerId:string; planId:string; quantity:number; variant:string; startDate:string; expiryDate:string; nextBilling:string; stage:Stage; paused:boolean; streak:number; missed:boolean; loyaltyStep:number; loyaltyCap:number; createdAt:string; terms:number; notes:string };
+export type Discount = { id:string; name:string; kind:'percent'|'fixed'; value:number; minQuantity:number; minPurchase:number; startDate:string; endDate:string; limit:number; used:number; productId:string; subscriptionId:string };
+export type Tax = { id:string; name:string; rate:number };
+export type Invoice = { id:string; number:string; subscriptionId:string; customerId:string; period:string; dueDate:string; issuedDate:string; status:'Draft'|'Confirmed'|'Paid'|'Cancelled'; product:string; quantity:number; unitPrice:number; subtotal:number; discount:number; discountLabel:string; discountId?:string; tax:number; taxRate:number; total:number; paid:number; loyaltyPercent:number; earned:boolean; paidAt?:string };
+export type Payment = { id:string; invoiceId:string; customerId:string; amount:number; method:string; date:string; note:string; requestKey:string };
+export type QuoteTemplate = { id:string; name:string; planId:string; quantity:number; validDays:number; notes:string };
+export type Activity = { id:string; title:string; detail:string; date:string; kind:'payment'|'loyalty'|'subscription'|'invoice'|'reset' };
+export type Workspace = { products:Product[]; plans:Plan[]; customers:Customer[]; subscriptions:Subscription[]; invoices:Invoice[]; payments:Payment[]; discounts:Discount[]; taxes:Tax[]; templates:QuoteTemplate[]; activities:Activity[]; clock:string; demo:boolean };
+export type Viewer = { id:string; name:string; email:string; role:Role; customerId?:string; workspaceId?:string };
+export type Command = { type:string; payload:Record<string,unknown>; requestKey?:string };
